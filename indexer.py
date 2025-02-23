@@ -2,71 +2,86 @@ import os
 import chromadb
 from chromadb.utils import embedding_functions
 import re
+from xml.etree import ElementTree as ET
 
 # Initialize embedding function
 embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
 
-# Function to chunk by size
+# Character-based chunking (fallback)
 def chunk_by_size(content, chunk_size=1000):
     """Chunk content by character size."""
     return [content[i:i + chunk_size] for i in range(0, len(content), chunk_size)]
 
-# Function to chunk by lines
-def chunk_by_lines(content, lines_per_chunk=50):
-    """Chunk content by number of lines."""
-    lines = content.splitlines()
-    return ['\n'.join(lines[i:i + lines_per_chunk]) for i in range(0, len(lines), lines_per_chunk)]
-
-# Function to chunk by function (C# method detection)
-def chunk_by_function(content):
-    """Chunk content by C# function/method definitions."""
-    # Simple regex to detect method signatures (public/private/protected, etc.)
-    pattern = r'(?:(?:public|private|protected|internal|static|async)\s+)?(?:\w+\s+)?\w+\s*\([^)]*\)\s*{'
-    matches = list(re.finditer(pattern, content))
-    if not matches:
-        return [content]  # Fallback to whole content if no functions found
-    
-    chunks = []
-    start = 0
-    for match in matches:
-        end = match.start()
-        if start < end:
-            chunks.append(content[start:end].strip())
-        chunks.append(content[end:match.end()].strip())  # Include the method signature
-        start = match.end()
-    
-    # Add remaining content after last function
-    if start < len(content):
-        chunks.append(content[start:].strip())
-    
-    return chunks
-
-# Function to chunk by class
+# Chunk .cs files by class
 def chunk_by_class(content):
     """Chunk content by C# class definitions."""
-    # Regex to detect class declarations
-    pattern = r'(?:(?:public|private|protected|internal)\s+)?class\s+\w+\s*(?::\s*\w+)?\s*{'
-    matches = list(re.finditer(pattern, content))
+    # Updated regex to handle attributes and more flexible spacing
+    pattern = r'(?:(?:public|private|protected|internal|static|abstract|sealed)?\s+)?(?:\[.*?\]\s*)?class\s+\w+\s*(?::\s*[\w<>, ]+)?\s*{'
+    matches = list(re.finditer(pattern, content, re.DOTALL))
     if not matches:
-        return [content]  # Fallback to whole content if no classes found
+        print("Warning: No class definitions found, indexing as single chunk.")
+        return [content]
     
     chunks = []
     start = 0
     for match in matches:
         end = match.start()
         if start < end:
-            chunks.append(content[start:end].strip())
-        chunks.append(content[end:match.end()].strip())  # Include the class declaration
-        start = match.end()
+            # Add preamble or content before the class
+            preamble = content[start:end].strip()
+            if preamble:
+                chunks.append(preamble)
+        # Add the class itself (from start of declaration to end of match)
+        class_start = match.start()
+        # Find the end of the class by counting braces
+        brace_count = 0
+        i = match.end() - 1  # Start at the opening brace
+        while i < len(content):
+            if content[i] == '{':
+                brace_count += 1
+            elif content[i] == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    chunks.append(content[class_start:i + 1].strip())
+                    start = i + 1
+                    break
+            i += 1
+        else:
+            # If no closing brace found, take rest of content
+            chunks.append(content[class_start:].strip())
+            start = len(content)
     
-    # Add remaining content after last class
+    # Add any remaining content after the last class
     if start < len(content):
-        chunks.append(content[start:].strip())
+        remaining = content[start:].strip()
+        if remaining:
+            chunks.append(remaining)
     
     return chunks
 
-# Function to read and chunk C# files
-def read_cs_files(directory, chunk_type="size", chunk_size=1000, lines_per_chunk=50):
+# Chunk .xml files by top-level elements
+def chunk_by_xml_elements(content):
+    try:
+        root = ET.fromstring(content)
+        chunks = []
+        for child in root:
+            # Special handling for userEvent elements
+            if child.tag == "agentEventManager":
+                for event in child.findall(".//event"):
+                    chunk = ET.tostring(event, encoding="unicode", method="xml").strip()
+                    if chunk:
+                        chunks.append(chunk)
+            else:
+                chunk = ET.tostring(child, encoding="unicode", method="xml").strip()
+                if chunk:
+                    chunks.append(chunk)
+        return chunks or [content]
+    except ET.ParseError as e:
+        print(f"Warning: Failed to parse XML content due to {e}, indexing as single chunk.")
+        return [content]
+
+# Read and chunk files
+def read_cs_files(directory, cs_chunk_type="class", xml_chunk_type="elements", chunk_size=1000):
     documents = []
     ids = []
     metadatas = []
@@ -78,21 +93,23 @@ def read_cs_files(directory, chunk_type="size", chunk_size=1000, lines_per_chunk
                 with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
                     
-                    # Apply chunking based on file type
                     if file.endswith(".cs"):
-                        if chunk_type == "size":
-                            chunks = chunk_by_size(content, chunk_size)
-                        elif chunk_type == "function":
-                            chunks = chunk_by_function(content)
-                        elif chunk_type == "class":
+                        if cs_chunk_type == "class":
                             chunks = chunk_by_class(content)
+                        elif cs_chunk_type == "size":
+                            chunks = chunk_by_size(content, chunk_size)
                         else:
                             chunks = [content]
-                    else:  # .csproj and .xml
-                        if chunk_type == "size":
+                    elif file.endswith(".xml"):
+                        if xml_chunk_type == "elements":
+                            chunks = chunk_by_xml_elements(content)
+                        elif xml_chunk_type == "size":
                             chunks = chunk_by_size(content, chunk_size)
-                        elif chunk_type == "lines":
-                            chunks = chunk_by_lines(content, lines_per_chunk)
+                        else:
+                            chunks = [content]
+                    else:  # .csproj
+                        if xml_chunk_type == "size":
+                            chunks = chunk_by_size(content, chunk_size)
                         else:
                             chunks = [content]
                     
@@ -105,18 +122,18 @@ def read_cs_files(directory, chunk_type="size", chunk_size=1000, lines_per_chunk
                                 "filename": file,
                                 "path": file_path,
                                 "chunk_index": i,
-                                "chunk_type": chunk_type if file.endswith(".cs") else ("size" if chunk_type == "size" else ("lines" if chunk_type == "lines" else "none")),
+                                "chunk_type": cs_chunk_type if file.endswith(".cs") else xml_chunk_type,
                                 "file_type": "cs" if file.endswith(".cs") else ("csproj" if file.endswith(".csproj") else "xml")
                             })
     
     return documents, ids, metadatas
 
-# Main indexing function
+# Index codebase
 def index_codebase(
     codebase_path,
-    chunk_type="size",
+    cs_chunk_type="class",
+    xml_chunk_type="elements",
     chunk_size=1000,
-    lines_per_chunk=50,
     use_persistent=False,
     persistent_path="./chroma_db"
 ):
@@ -132,8 +149,8 @@ def index_codebase(
         embedding_function=embedding_function
     )
     
-    print(f"Reading and chunking files with chunk_type='{chunk_type}'...")
-    documents, ids, metadatas = read_cs_files(codebase_path, chunk_type, chunk_size, lines_per_chunk)
+    print(f"Reading and chunking files: .cs with '{cs_chunk_type}', .xml/.csproj with '{xml_chunk_type}'...")
+    documents, ids, metadatas = read_cs_files(codebase_path, cs_chunk_type, xml_chunk_type, chunk_size)
     
     print(f"Indexing {len(documents)} chunks...")
     collection.add(
@@ -145,36 +162,41 @@ def index_codebase(
     
     return collection
 
-# Query the index
+# Query the index with chunk size in lines
 def query_index(collection, query_text, n_results=3):
     results = collection.query(
         query_texts=[query_text],
         n_results=n_results
+        #where={"filename": ""} #temp filter by filename
     )
     for i, (doc, meta) in enumerate(zip(results["documents"][0], results["metadatas"][0])):
+        # Calculate chunk size in lines
+        line_count = len(doc.splitlines())
+        
         print(f"Result {i+1}:")
         print(f"File: {meta['filename']}")
         print(f"Path: {meta['path']}")
         print(f"Chunk Index: {meta['chunk_index']} (Type: {meta['chunk_type']})")
+        print(f"File Type: {meta['file_type']}")
+        print(f"Chunk Size: {line_count} lines")
         print(f"Content snippet: {doc[:200]}...\n")
 
 if __name__ == "__main__":
-    # Configuration
-    codebase_path = "sample_docs/example1"  # Replace with your actual path
-    chunk_type = "class"  # Options: "size", "function", "class"
-    chunk_size = 1000  # Only used if chunk_type is "size"
-    lines_per_chunk = 50  # Used for "lines", e.g., 1500 lines / 50 = 30 chunks
-    use_persistent = True  # Set to False for in-memory
-    persistent_path = "./chroma_db"  # Directory for persistent storage
+    codebase_path = "sample_docs/example1"  # Change to your codebase directory
+    cs_chunk_type = "class"
+    xml_chunk_type = "elements"
+    chunk_size = 1000
+    use_persistent = True
+    persistent_path = "./chroma_db"
     
-    # Index the codebase
     collection = index_codebase(
         codebase_path=codebase_path,
-        chunk_type=chunk_type,
+        cs_chunk_type=cs_chunk_type,
+        xml_chunk_type=xml_chunk_type,
         chunk_size=chunk_size,
-        lines_per_chunk=lines_per_chunk,
         use_persistent=use_persistent,
         persistent_path=persistent_path
     )
     
-    query_index(collection, "What types does DataAgent allow?")
+    query_index(collection, "What triggers the LP_ProcessStart event?")
+    
