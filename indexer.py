@@ -11,6 +11,12 @@ def chunk_by_size(content, chunk_size=1000):
     """Chunk content by character size."""
     return [content[i:i + chunk_size] for i in range(0, len(content), chunk_size)]
 
+# Function to chunk by lines
+def chunk_by_lines(content, lines_per_chunk=50):
+    """Chunk content by number of lines."""
+    lines = content.splitlines()
+    return ['\n'.join(lines[i:i + lines_per_chunk]) for i in range(0, len(lines), lines_per_chunk)]
+
 # Function to chunk by function (C# method detection)
 def chunk_by_function(content):
     """Chunk content by C# function/method definitions."""
@@ -60,31 +66,38 @@ def chunk_by_class(content):
     return chunks
 
 # Function to read and chunk C# files
-def read_cs_files(directory, chunk_type="size", chunk_size=1000):
+def read_cs_files(directory, chunk_type="size", chunk_size=1000, lines_per_chunk=50):
     documents = []
     ids = []
     metadatas = []
     
     for root, _, files in os.walk(directory):
         for file in files:
-            if file.endswith(".cs"):
+            if file.endswith((".cs", ".csproj", ".xml")):
                 file_path = os.path.join(root, file)
                 with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
                     
-                    # Chunk the content based on the specified method
-                    if chunk_type == "size":
-                        chunks = chunk_by_size(content, chunk_size)
-                    elif chunk_type == "function":
-                        chunks = chunk_by_function(content)
-                    elif chunk_type == "class":
-                        chunks = chunk_by_class(content)
-                    else:
-                        raise ValueError("Invalid chunk_type. Use 'size', 'function', or 'class'.")
+                    # Apply chunking based on file type
+                    if file.endswith(".cs"):
+                        if chunk_type == "size":
+                            chunks = chunk_by_size(content, chunk_size)
+                        elif chunk_type == "function":
+                            chunks = chunk_by_function(content)
+                        elif chunk_type == "class":
+                            chunks = chunk_by_class(content)
+                        else:
+                            chunks = [content]
+                    else:  # .csproj and .xml
+                        if chunk_type == "size":
+                            chunks = chunk_by_size(content, chunk_size)
+                        elif chunk_type == "lines":
+                            chunks = chunk_by_lines(content, lines_per_chunk)
+                        else:
+                            chunks = [content]
                     
-                    # Generate unique IDs and metadata for each chunk
                     for i, chunk in enumerate(chunks):
-                        if chunk:  # Skip empty chunks
+                        if chunk:
                             chunk_id = f"{file_path}_chunk_{i}"
                             documents.append(chunk)
                             ids.append(chunk_id)
@@ -92,7 +105,8 @@ def read_cs_files(directory, chunk_type="size", chunk_size=1000):
                                 "filename": file,
                                 "path": file_path,
                                 "chunk_index": i,
-                                "chunk_type": chunk_type
+                                "chunk_type": chunk_type if file.endswith(".cs") else ("size" if chunk_type == "size" else ("lines" if chunk_type == "lines" else "none")),
+                                "file_type": "cs" if file.endswith(".cs") else ("csproj" if file.endswith(".csproj") else "xml")
                             })
     
     return documents, ids, metadatas
@@ -102,10 +116,10 @@ def index_codebase(
     codebase_path,
     chunk_type="size",
     chunk_size=1000,
+    lines_per_chunk=50,
     use_persistent=False,
     persistent_path="./chroma_db"
 ):
-    # Initialize ChromaDB client (persistent or in-memory)
     if use_persistent:
         client = chromadb.PersistentClient(path=persistent_path)
         print(f"Using persistent client at {persistent_path}")
@@ -113,14 +127,13 @@ def index_codebase(
         client = chromadb.Client()
         print("Using in-memory client")
     
-    # Create or get a collection
     collection = client.get_or_create_collection(
         name="csharp_codebase",
         embedding_function=embedding_function
     )
     
-    print(f"Reading and chunking C# files with chunk_type='{chunk_type}'...")
-    documents, ids, metadatas = read_cs_files(codebase_path, chunk_type, chunk_size)
+    print(f"Reading and chunking files with chunk_type='{chunk_type}'...")
+    documents, ids, metadatas = read_cs_files(codebase_path, chunk_type, chunk_size, lines_per_chunk)
     
     print(f"Indexing {len(documents)} chunks...")
     collection.add(
@@ -147,9 +160,10 @@ def query_index(collection, query_text, n_results=3):
 
 if __name__ == "__main__":
     # Configuration
-    codebase_path = "sample_docs\example1"  # Replace with your actual path
+    codebase_path = "sample_docs/example1"  # Replace with your actual path
     chunk_type = "class"  # Options: "size", "function", "class"
     chunk_size = 1000  # Only used if chunk_type is "size"
+    lines_per_chunk = 50  # Used for "lines", e.g., 1500 lines / 50 = 30 chunks
     use_persistent = True  # Set to False for in-memory
     persistent_path = "./chroma_db"  # Directory for persistent storage
     
@@ -158,9 +172,9 @@ if __name__ == "__main__":
         codebase_path=codebase_path,
         chunk_type=chunk_type,
         chunk_size=chunk_size,
+        lines_per_chunk=lines_per_chunk,
         use_persistent=use_persistent,
         persistent_path=persistent_path
     )
     
-    # Example query
-    query_index(collection, "How is the class DataAgent implemented?")
+    query_index(collection, "What types does DataAgent allow?")
