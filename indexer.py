@@ -13,14 +13,16 @@ def chunk_by_size(content, chunk_size=1000):
     return [content[i:i + chunk_size] for i in range(0, len(content), chunk_size)]
 
 # Chunk .cs files by class
-def chunk_by_class(content):
+def chunk_by_class(file, content, chunk_size=1000):
     """Chunk content by C# class definitions."""
     # Updated regex to handle attributes and more flexible spacing
     pattern = r'(?:(?:public|private|protected|internal|static|abstract|sealed)?\s+)?(?:\[.*?\]\s*)?class\s+\w+\s*(?::\s*[\w<>, ]+)?\s*{'
     matches = list(re.finditer(pattern, content, re.DOTALL))
     if not matches:
-        print("Warning: No class definitions found, indexing as single chunk.")
-        return [content]
+        print(f"{file}: No class definitions found, indexing by chunk size.")
+        return [content[i:i + chunk_size] for i in range(0, len(content), chunk_size)]
+        #print("Warning: No class definitions found, indexing as single chunk.")
+        # return [content]
     
     chunks = []
     start = 0
@@ -60,7 +62,7 @@ def chunk_by_class(content):
     return chunks
 
 # Chunk .xml files by top-level elements
-def chunk_by_xml_elements(content):
+def chunk_by_xml_elements(file, content, chunk_size):
     try:
         root = ET.fromstring(content)
         chunks = []
@@ -77,8 +79,10 @@ def chunk_by_xml_elements(content):
                     chunks.append(chunk)
         return chunks or [content]
     except ET.ParseError as e:
-        print(f"Warning: Failed to parse XML content due to {e}, indexing as single chunk.")
-        return [content]
+        print(f"{file}: Failed to parse XML content due to {e}, indexing by chunk size.")
+        return [content[i:i + chunk_size] for i in range(0, len(content), chunk_size)]
+        # print(f"Warning: Failed to parse XML content due to {e}, indexing as single chunk.")
+        #return [content]
 
 # Read and chunk files
 def read_cs_files(directory, cs_chunk_type="class", xml_chunk_type="elements", chunk_size=1000):
@@ -95,14 +99,14 @@ def read_cs_files(directory, cs_chunk_type="class", xml_chunk_type="elements", c
                     
                     if file.endswith(".cs"):
                         if cs_chunk_type == "class":
-                            chunks = chunk_by_class(content)
+                            chunks = chunk_by_class(file, content, chunk_size)
                         elif cs_chunk_type == "size":
                             chunks = chunk_by_size(content, chunk_size)
                         else:
                             chunks = [content]
                     elif file.endswith(".xml"):
                         if xml_chunk_type == "elements":
-                            chunks = chunk_by_xml_elements(content)
+                            chunks = chunk_by_xml_elements(file, content, chunk_size)
                         elif xml_chunk_type == "size":
                             chunks = chunk_by_size(content, chunk_size)
                         else:
@@ -135,14 +139,17 @@ def index_codebase(
     xml_chunk_type="elements",
     chunk_size=1000,
     use_persistent=False,
-    persistent_path="./chroma_db"
+    persistent_path="./chroma_db",
+    batch_size=500  # Add batch size parameter
 ):
     if use_persistent:
         client = chromadb.PersistentClient(path=persistent_path)
         print(f"Using persistent client at {persistent_path}")
+        
     else:
         client = chromadb.Client()
         print("Using in-memory client")
+        
     
     collection = client.get_or_create_collection(
         name="csharp_codebase",
@@ -152,14 +159,21 @@ def index_codebase(
     print(f"Reading and chunking files: .cs with '{cs_chunk_type}', .xml/.csproj with '{xml_chunk_type}'...")
     documents, ids, metadatas = read_cs_files(codebase_path, cs_chunk_type, xml_chunk_type, chunk_size)
     
-    print(f"Indexing {len(documents)} chunks...")
-    collection.add(
-        documents=documents,
-        ids=ids,
-        metadatas=metadatas
-    )
-    print("Indexing complete!")
+    print(f"Total chunks to index: {len(documents)}")
     
+    # Split into batches and add incrementally
+    for i in range(0, len(documents), batch_size):
+        batch_docs = documents[i:i + batch_size]
+        batch_ids = ids[i:i + batch_size]
+        batch_metas = metadatas[i:i + batch_size]
+        print(f"Indexing batch {i // batch_size + 1}: {len(batch_docs)} chunks...")
+        collection.add(
+            documents=batch_docs,
+            ids=batch_ids,
+            metadatas=batch_metas
+        )
+    
+    print("Indexing complete!")
     return collection
 
 # Query the index with chunk size in lines
@@ -195,7 +209,8 @@ if __name__ == "__main__":
         xml_chunk_type=xml_chunk_type,
         chunk_size=chunk_size,
         use_persistent=use_persistent,
-        persistent_path=persistent_path
+        persistent_path=persistent_path,
+        batch_size=500  # Set batch size here
     )
     
     query_index(collection, "What triggers the LP_ProcessStart event?")
