@@ -1,4 +1,4 @@
-# C# Codebase RAG Index with OpenAI
+# RAG Index with OpenAI
 
 This project creates a Retrieval-Augmented Generation (RAG) system using ChromaDB and OpenAI's LLM. Its specialized for a C# codebase that indexes `.cs`, `.csproj`, and `.xml` files into a vector database and allows querying the indexed data with natural language questions, leveraging OpenAI for detailed responses.
 
