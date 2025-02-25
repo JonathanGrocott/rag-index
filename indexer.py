@@ -22,8 +22,6 @@ def chunk_by_class(file, content, chunk_size=1000):
     if not matches:
         print(f"{file}: No class definitions found, indexing by chunk size.")
         return [content[i:i + chunk_size] for i in range(0, len(content), chunk_size)]
-        #print("Warning: No class definitions found, indexing as single chunk.")
-        # return [content]
     
     chunks = []
     start = 0
@@ -82,8 +80,6 @@ def chunk_by_xml_elements(file, content, chunk_size):
     except ET.ParseError as e:
         print(f"{file}: Failed to parse XML content due to {e}, indexing by chunk size.")
         return [content[i:i + chunk_size] for i in range(0, len(content), chunk_size)]
-        # print(f"Warning: Failed to parse XML content due to {e}, indexing as single chunk.")
-        #return [content]
 
 # Read and chunk PDF files
 def read_pdf_files(file_path, chunk_size=1000):
@@ -102,45 +98,46 @@ def read_cs_files(directory, cs_chunk_type="class", xml_chunk_type="elements", c
     
     for root, _, files in os.walk(directory):
         for file in files:
-            if file.endswith((".cs", ".csproj", ".xml")):
+            if file.endswith((".cs", ".csproj", ".xml", ".pdf")):
                 file_path = os.path.join(root, file)
-                with open(file_path, "r", encoding="utf-8") as f:
-                    content = f.read()
+                if file.endswith(".pdf"):
+                    chunks = read_pdf_files(file_path, chunk_size)
+                else:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                        
+                        if file.endswith(".cs"):
+                            if cs_chunk_type == "class":
+                                chunks = chunk_by_class(file, content, chunk_size)
+                            elif cs_chunk_type == "size":
+                                chunks = chunk_by_size(content, chunk_size)
+                            else:
+                                chunks = [content]
+                        elif file.endswith(".xml"):
+                            if xml_chunk_type == "elements":
+                                chunks = chunk_by_xml_elements(file, content, chunk_size)
+                            elif xml_chunk_type == "size":
+                                chunks = chunk_by_size(content, chunk_size)
+                            else:
+                                chunks = [content]
+                        else:  # .csproj
+                            if xml_chunk_type == "size":
+                                chunks = chunk_by_size(content, chunk_size)
+                            else:
+                                chunks = [content]
                     
-                    if file.endswith(".cs"):
-                        if cs_chunk_type == "class":
-                            chunks = chunk_by_class(file, content, chunk_size)
-                        elif cs_chunk_type == "size":
-                            chunks = chunk_by_size(content, chunk_size)
-                        else:
-                            chunks = [content]
-                    elif file.endswith(".xml"):
-                        if xml_chunk_type == "elements":
-                            chunks = chunk_by_xml_elements(file, content, chunk_size)
-                        elif xml_chunk_type == "size":
-                            chunks = chunk_by_size(content, chunk_size)
-                        else:
-                            chunks = [content]
-                    elif file.endswith(".pdf"):
-                        chunks = read_pdf_files(file_path, chunk_size)
-                    else:  # .csproj
-                        if xml_chunk_type == "size":
-                            chunks = chunk_by_size(content, chunk_size)
-                        else:
-                            chunks = [content]
-                    
-                    for i, chunk in enumerate(chunks):
-                        if chunk:
-                            chunk_id = f"{file_path}_chunk_{i}"
-                            documents.append(chunk)
-                            ids.append(chunk_id)
-                            metadatas.append({
-                                "filename": file,
-                                "path": file_path,
-                                "chunk_index": i,
-                                "chunk_type": cs_chunk_type if file.endswith(".cs") else xml_chunk_type,
-                                "file_type": "cs" if file.endswith(".cs") else ("csproj" if file.endswith(".csproj") else "xml")
-                            })
+                for i, chunk in enumerate(chunks):
+                    if chunk:
+                        chunk_id = f"{file_path}_chunk_{i}"
+                        documents.append(chunk)
+                        ids.append(chunk_id)
+                        metadatas.append({
+                            "filename": file,
+                            "path": file_path,
+                            "chunk_index": i,
+                            "chunk_type": cs_chunk_type if file.endswith(".cs") else xml_chunk_type,
+                            "file_type": "cs" if file.endswith(".cs") else ("csproj" if file.endswith(".csproj") else "xml")
+                        })
     
     return documents, ids, metadatas
 
@@ -193,7 +190,6 @@ def query_index(collection, query_text, n_results=3):
     results = collection.query(
         query_texts=[query_text],
         n_results=n_results
-        #where={"filename": ""} #temp filter by filename
     )
     for i, (doc, meta) in enumerate(zip(results["documents"][0], results["metadatas"][0])):
         # Calculate chunk size in lines
@@ -225,5 +221,4 @@ if __name__ == "__main__":
         batch_size=500  # Set batch size here
     )
     
-    query_index(collection, "What triggers the LP_ProcessStart event?")
-    
+    query_index(collection, "What substitution parameter should i use to retreive the element name?")
