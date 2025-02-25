@@ -3,6 +3,7 @@ import chromadb
 from chromadb.utils import embedding_functions
 import re
 from xml.etree import ElementTree as ET
+import PyPDF2
 
 # Initialize embedding function
 embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
@@ -84,6 +85,15 @@ def chunk_by_xml_elements(file, content, chunk_size):
         # print(f"Warning: Failed to parse XML content due to {e}, indexing as single chunk.")
         #return [content]
 
+# Read and chunk PDF files
+def read_pdf_files(file_path, chunk_size=1000):
+    with open(file_path, "rb") as f:
+        reader = PyPDF2.PdfReader(f)
+        content = ""
+        for page in reader.pages:
+            content += page.extract_text()
+        return chunk_by_size(content, chunk_size)
+
 # Read and chunk files
 def read_cs_files(directory, cs_chunk_type="class", xml_chunk_type="elements", chunk_size=1000):
     documents = []
@@ -111,6 +121,8 @@ def read_cs_files(directory, cs_chunk_type="class", xml_chunk_type="elements", c
                             chunks = chunk_by_size(content, chunk_size)
                         else:
                             chunks = [content]
+                    elif file.endswith(".pdf"):
+                        chunks = read_pdf_files(file_path, chunk_size)
                     else:  # .csproj
                         if xml_chunk_type == "size":
                             chunks = chunk_by_size(content, chunk_size)
