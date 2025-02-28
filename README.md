@@ -47,6 +47,7 @@ A Retrieval-Augmented Generation (RAG) indexing and querying system for processi
   python -m venv venv
   source venv/bin/activate  # Linux/Mac
   venv\Scripts\activate     # Windows
+  ```
 
 3. **Install Dependencies**:
 
@@ -73,8 +74,10 @@ A Retrieval-Augmented Generation (RAG) indexing and querying system for processi
 4. **Set Up Environment Variables**:
     - Create a `.env` file in the root directory.
     - Add the following variables:
-      `LLAMA_CLOUD_API_KEY=your_llama_cloud_api_key  # For LlamaParse `
-      `OPENAI_API_KEY=your_openai_api_key           # For OpenAI querying `
+      ```bash
+      LLAMA_CLOUD_API_KEY=your_llama_cloud_api_key  # For LlamaParse 
+      OPENAI_API_KEY=your_openai_api_key           # For OpenAI querying 
+      ```
 
 5. **Install Tesseract** (for Marker):
     - Windows: Download from Tesseract GitHub and add to PATH.
@@ -87,10 +90,10 @@ A Retrieval-Augmented Generation (RAG) indexing and querying system for processi
 
   - Run one of the indexing scripts to process files in sample_docs/example1 and its subdirectories:
 
-    - Marker (Recommended, GPU-accelerated):
-      ```bash
-      python index-marker.py
-
+  - Marker (Recommended, GPU-accelerated):
+    ```bash
+    python index-marker.py
+    ```
     Converts all files to Markdown, uses paragraph chunking for .txt.
 
   - LlamaParse (Cloud-based):
@@ -120,7 +123,7 @@ A Retrieval-Augmented Generation (RAG) indexing and querying system for processi
     python query-openai.py
     ```
   - Example output:
-
+    ```
     Query: In PI System Explorer how do you reference the sibling element?
 
     Retrieved Chunks:
@@ -133,7 +136,8 @@ A Retrieval-Augmented Generation (RAG) indexing and querying system for processi
     ```
     OpenAI LLM Answer:
     In PI System Explorer, to reference a sibling element...
-
+    ```
+    
     Customize `test_queries` in `query-openai.py` for different questions.
 
 ## Project Structure
