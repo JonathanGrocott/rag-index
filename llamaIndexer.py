@@ -1,9 +1,18 @@
 import os
 import chromadb
 from chromadb.utils import embedding_functions
-import re 
+import re
 from xml.etree import ElementTree as ET
-import PyPDF2
+from llama_cloud_services import LlamaParse
+from dotenv import load_dotenv  # Import python-dotenv to load .env
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Retrieve the API key from environment variables
+LLAMA_CLOUD_API_KEY = os.getenv("LLAMA_CLOUD_API_KEY")
+if not LLAMA_CLOUD_API_KEY:
+    raise ValueError("LLAMA_CLOUD_API_KEY not found in .env file. Please set it.")
 
 # Initialize embedding function
 embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
@@ -13,33 +22,27 @@ def chunk_by_size(content, chunk_size=1000):
     """Chunk content by character size."""
     return [content[i:i + chunk_size] for i in range(0, len(content), chunk_size)]
 
-# Chunk .cs files by class
+# Chunk .cs files by class (unchanged)
 def chunk_by_class(file, content, chunk_size=1000):
     """Chunk content by C# class definitions."""
     print(f"Chunking: '{file}'")
-    # Updated regex to handle attributes and more flexible spacing
     pattern = r'(?:(?:public|private|protected|internal|static|abstract|sealed)?\s+)?(?:\[.*?\]\s*)?class\s+\w+\s*(?::\s*[\w<>, ]+)?\s*{'
     matches = list(re.finditer(pattern, content, re.DOTALL))
     if not matches:
         print(f"{file}: No class definitions found, indexing by chunk size.")
         return [content[i:i + chunk_size] for i in range(0, len(content), chunk_size)]
-        #print("Warning: No class definitions found, indexing as single chunk.")
-        # return [content]
     
     chunks = []
     start = 0
     for match in matches:
         end = match.start()
         if start < end:
-            # Add preamble or content before the class
             preamble = content[start:end].strip()
             if preamble:
                 chunks.append(preamble)
-        # Add the class itself (from start of declaration to end of match)
         class_start = match.start()
-        # Find the end of the class by counting braces
         brace_count = 0
-        i = match.end() - 1  # Start at the opening brace
+        i = match.end() - 1
         while i < len(content):
             if content[i] == '{':
                 brace_count += 1
@@ -51,11 +54,9 @@ def chunk_by_class(file, content, chunk_size=1000):
                     break
             i += 1
         else:
-            # If no closing brace found, take rest of content
             chunks.append(content[class_start:].strip())
             start = len(content)
     
-    # Add any remaining content after the last class
     if start < len(content):
         remaining = content[start:].strip()
         if remaining:
@@ -63,14 +64,13 @@ def chunk_by_class(file, content, chunk_size=1000):
     
     return chunks
 
-# Chunk .xml files by top-level elements
+# Chunk .xml files by top-level elements (unchanged)
 def chunk_by_xml_elements(file, content, chunk_size):
     print(f"Chunking: '{file}'")
     try:
         root = ET.fromstring(content)
         chunks = []
         for child in root:
-            # Special handling for userEvent elements
             if child.tag == "agentEventManager":
                 for event in child.findall(".//event"):
                     chunk = ET.tostring(event, encoding="unicode", method="xml").strip()
@@ -89,22 +89,28 @@ def chunk_by_xml_elements(file, content, chunk_size):
     except ET.ParseError as e:
         print(f"{file}: Failed to parse XML content due to {e}, indexing by chunk size.")
         return [content[i:i + chunk_size] for i in range(0, len(content), chunk_size)]
-        # print(f"Warning: Failed to parse XML content due to {e}, indexing as single chunk.")
-        #return [content]
 
-# Read and chunk PDF files
+# Parse PDFs with LlamaParse using env variable
 def chunk_pdf_files(file_path, chunk_size=1000):
     file_name = os.path.basename(file_path)
-    print(f"Chunking: '{file_name}'")
+    print(f"Chunking: '{file_name}' with LlamaParse")
+    
+    # Initialize LlamaParse with API key from env
+    parser = LlamaParse(
+        api_key=LLAMA_CLOUD_API_KEY,
+        result_type="markdown"  # Output as Markdown
+    )
+    
+    # Parse the PDF
+    documents = parser.load_data(file_path)
+    
+    # Combine all parsed content into a single string (Markdown)
+    content = "\n".join(doc.text for doc in documents if doc.text)
+    
+    # Chunk the Markdown content by character size
+    return chunk_by_size(content, chunk_size)
 
-    with open(file_path, "rb") as f:
-        reader = PyPDF2.PdfReader(f)
-        content = ""
-        for page in reader.pages:
-            content += page.extract_text() or ""  # Ensure we handle None values
-        return chunk_by_size(content, chunk_size)
-
-# Read and chunk files
+# Read and chunk files (no need for pdf_api_key parameter)
 def read_files(directory, cs_chunk_type="class", xml_chunk_type="elements", pdf_chunk_type="pdf", txt_chunk_type="size", chunk_size=1000):
     documents = []
     ids = []
@@ -119,7 +125,7 @@ def read_files(directory, cs_chunk_type="class", xml_chunk_type="elements", pdf_
                     with open(file_path, "r", encoding="utf-8") as f:
                         content = f.read()
                 elif file.endswith(".pdf"):
-                    # Handle PDF files separately
+                    # Handle PDF files with LlamaParse
                     chunks = chunk_pdf_files(file_path, chunk_size)
                     for i, chunk in enumerate(chunks):
                         if chunk:
@@ -133,9 +139,9 @@ def read_files(directory, cs_chunk_type="class", xml_chunk_type="elements", pdf_
                                 "chunk_type": pdf_chunk_type,
                                 "file_type": "pdf"
                             })
-                    continue  # Skip the rest of the loop for PDF files
+                    continue
                 
-                # Handle other file types
+                # Handle other file types (unchanged)
                 if file.endswith(".cs"):
                     if cs_chunk_type == "class":
                         chunks = chunk_by_class(file, content, chunk_size)
@@ -155,7 +161,7 @@ def read_files(directory, cs_chunk_type="class", xml_chunk_type="elements", pdf_
                         chunks = chunk_by_size(content, chunk_size)
                     else:
                         chunks = [content]
-                else:  # everything else is indexed by chunk size
+                else:
                     if txt_chunk_type == "size":
                         chunks = chunk_by_size(content, chunk_size)
                     else:
@@ -176,7 +182,7 @@ def read_files(directory, cs_chunk_type="class", xml_chunk_type="elements", pdf_
     
     return documents, ids, metadatas
 
-# Index codebase
+# Index codebase (no need for pdf_api_key parameter)
 def index_codebase(
     codebase_path,
     cs_chunk_type="class",
@@ -186,7 +192,7 @@ def index_codebase(
     chunk_size=1000,
     use_persistent=False,
     persistent_path="./chroma_db",
-    batch_size=160  # Add batch size parameter
+    batch_size=160
 ):
     if use_persistent:
         client = chromadb.PersistentClient(path=persistent_path)
@@ -195,15 +201,13 @@ def index_codebase(
         client = chromadb.Client()
         print("Using in-memory client")
     
-    #collection_name = "DEFAULT_COLLECTION"  # Ensure this is defined before use
-
-    # Check if the collection already exists
+    collection_name = "DEFAULT_COLLECTION"
+    
     try:
         collection = client.get_collection(name=collection_name)
         print(f"Collection '{collection_name}' already exists. Using existing collection.")
-        return collection  # Return the existing collection without re-indexing
-    except Exception as e:
-        # If the collection does not exist, create it
+        return collection
+    except Exception:
         print(f"Collection '{collection_name}' does not exist. Creating a new collection.")
         collection = client.get_or_create_collection(
             name=collection_name,
@@ -211,11 +215,12 @@ def index_codebase(
         )
     
     print(f"Reading and chunking files: cs with '{cs_chunk_type}', .xml/.csproj with '{xml_chunk_type}', .pdf with '{pdf_chunk_type}'...")
-    documents, ids, metadatas = read_files(codebase_path, cs_chunk_type, xml_chunk_type, pdf_chunk_type, txt_chunk_type, chunk_size)
+    documents, ids, metadatas = read_files(
+        codebase_path, cs_chunk_type, xml_chunk_type, pdf_chunk_type, txt_chunk_type, chunk_size
+    )
     
     print(f"Total chunks to index: {len(documents)}")
     
-    # Split into batches and add incrementally
     for i in range(0, len(documents), batch_size):
         batch_docs = documents[i:i + batch_size]
         batch_ids = ids[i:i + batch_size]
@@ -230,16 +235,13 @@ def index_codebase(
     print("Indexing complete!")
     return collection
 
-
-# Query the index with chunk size in lines
+# Query the index (unchanged)
 def query_index(collection, query_text, n_results=1):
     results = collection.query(
         query_texts=[query_text],
         n_results=n_results
-        #where={"source_name": ""} #temp filter by filename
     )
     for i, (doc, meta) in enumerate(zip(results["documents"][0], results["metadatas"][0])):
-        # Calculate chunk size in lines
         line_count = len(doc.splitlines())
         
         print(f"\n")
@@ -250,11 +252,10 @@ def query_index(collection, query_text, n_results=1):
         print(f"Chunk Index: {meta['chunk_index']} (Type: {meta['chunk_type']})")
         print(f"File Type: {meta['file_type']}")
         print(f"Chunk Size: {line_count} lines")
-        #print(f"Content snippet: {doc[:200]}...\n")
         print(f"Content snippet: {doc}...\n")
 
 if __name__ == "__main__":
-    codebase_path = "sample_docs/example1"  
+    codebase_path = "sample_docs/example1"
     cs_chunk_type = "class"
     xml_chunk_type = "elements"
     pdf_chunk_type = "pdf"
@@ -273,9 +274,7 @@ if __name__ == "__main__":
         chunk_size=chunk_size,
         use_persistent=use_persistent,
         persistent_path=persistent_path,
-        batch_size=160  
+        batch_size=160
     )
     
-    # Example queries
     query_index(collection, "In PI System Explorer how do you export a database to XML?")
-    #query_index(collection, "What is n-way buffering?")
