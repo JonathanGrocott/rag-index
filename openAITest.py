@@ -9,7 +9,7 @@ client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 # Initialize ChromaDB client and load collection
 def load_collection(persistent_path="./chroma_db"):
     client = chromadb.PersistentClient(path=persistent_path)
-    collection = client.get_collection(name="csharp_codebase")
+    collection = client.get_collection(name="DEFAULT_COLLECTION")
     return collection
 
 # Retrieve chunks from ChromaDB
@@ -28,7 +28,7 @@ def retrieve_chunks(collection, query, n_results=5, filename_filter=None):
 def query_openai_llm(query, chunks):
     context = "\n\n".join(chunks)
     prompt = (
-        "You are an expert in C# and XML configuration files."
+        "You are an expert in IIoT, AVEVA PI System, and C#."
         "Based on the following code and configuration excerpts, provide a detailed and accurate answer to the question.\n\n"
         f"Context:\n{context}\n\n"
         f"Question: {query}"
@@ -37,7 +37,7 @@ def query_openai_llm(query, chunks):
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",  
         messages=[
-            {"role": "system", "content": "You are a helpful assistant with expertise in C# and XML configuration."},
+            {"role": "system", "content": "You are an expert in IIoT, AVEVA PI System, and C#."},
             {"role": "user", "content": prompt}
         ],
         max_tokens=1000,  # Adjust for longer responses 
@@ -55,10 +55,10 @@ def test_rag(query, collection, n_results=5, filename_filter=None):
     for i, (chunk, meta) in enumerate(zip(chunks, metadatas)):
         line_count = len(chunk.splitlines())
         print(f"Chunk {i+1}:")
-        print(f"File: {meta['filename']}")
-        print(f"Path: {meta['path']}")
+        print(f"File: {meta['source_name']}")
+        print(f"Path: {meta['source_url']}")
         print(f"Chunk Size: {line_count} lines")
-        print(f"Content snippet: {chunk[:200]}...")
+        print(f"Content snippet: {chunk}...")
     
     # Get LLM response
     answer = query_openai_llm(query, chunks)
@@ -70,7 +70,7 @@ if __name__ == "__main__":
     
     # Test queries
     test_queries = [
-        "What triggers the LP_ProcessStart event?"
+        "In PI System Explorer how do you reference the sibling element?"
     ]
     
     for query in test_queries:
