@@ -43,7 +43,7 @@ A Retrieval-Augmented Generation (RAG) indexing and querying system for processi
    cd rag-index
 
 2. **Create a Virtual Environment**:
-   ```bash
+  ```bash
   python -m venv venv
   source venv/bin/activate  # Linux/Mac
   venv\Scripts\activate     # Windows
@@ -51,27 +51,30 @@ A Retrieval-Augmented Generation (RAG) indexing and querying system for processi
 3. **Install Dependencies**:
 
   **For Marker**:
-    ```bash
-    pip install -r requirements-marker.txt
+  ```bash
+  pip install -r requirements-marker.txt
+  ```
 
   **For LlamaParse**:
-    ```bash
-    pip install -r requirements-llama.txt
+  ```bash
+  pip install -r requirements-llama.txt
+  ```
 
   **For PyPDF2**:
-    ```bash
-    pip install -r requirements-pypdf2.txt
+  ```bash
+  pip install -r requirements-pypdf2.txt
+  ```
 
   **For OpenAI**:
-    ```bash
-    pip install openai
+  ```bash
+  pip install openai
+  ```
    
 4. **Set Up Environment Variables**:
     - Create a `.env` file in the root directory.
     - Add the following variables:
-      ```
-      LLAMA_CLOUD_API_KEY=your_llama_cloud_api_key  # For LlamaParse
-      OPENAI_API_KEY=your_openai_api_key           # For OpenAI querying
+      `LLAMA_CLOUD_API_KEY=your_llama_cloud_api_key  # For LlamaParse `
+      `OPENAI_API_KEY=your_openai_api_key           # For OpenAI querying `
 
 5. **Install Tesseract** (for Marker):
     - Windows: Download from Tesseract GitHub and add to PATH.
@@ -85,27 +88,27 @@ A Retrieval-Augmented Generation (RAG) indexing and querying system for processi
   - Run one of the indexing scripts to process files in sample_docs/example1 and its subdirectories:
 
     - Marker (Recommended, GPU-accelerated):
-      bash
+      ```bash
       python index-marker.py
 
     Converts all files to Markdown, uses paragraph chunking for .txt.
 
   - LlamaParse (Cloud-based):
-    bash
+    ```bash
     python index-llama.py
-
+    ```
     PDFs to Markdown via LlamaParse, basic chunking for others.
 
   - PyPDF2 (Local, lightweight):
-    bash
+    ```bash
     python index-pypdf2.py
-
+    ```
     Basic text extraction for PDFs.
 
   - Marker without Markdown:
-    bash
+    ```bash
     python index-marker-no-md.py
-        
+    ``` 
     PDFs to Markdown, raw text for others.
 
 * Output is stored in ./chroma_db as a persistent ChromaDB collection named DEFAULT_COLLECTION.
@@ -113,11 +116,10 @@ A Retrieval-Augmented Generation (RAG) indexing and querying system for processi
 ## Querying with OpenAI
 
   - Run the querying script to retrieve and answer questions:
-  ```bash
-  python query-openai.py
-
-  -Example output:
-    text
+    ```bash
+    python query-openai.py
+    ```
+  - Example output:
 
     Query: In PI System Explorer how do you reference the sibling element?
 
