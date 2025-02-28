@@ -1,0 +1,5 @@
+chromadb
+sentence-transformers
+python-dotenv
+torch --index-url https://download.pytorch.org/whl/cu118
+marker-pdf
