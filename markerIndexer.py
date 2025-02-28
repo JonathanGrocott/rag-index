@@ -1,20 +1,28 @@
+#
+# WARNING: This requires pytorch and tesseract to be installed on the system. I am using PyTorch on NVIDIA GPU.
+# It is incredibly slow on CPUs to process PDF's with this library.
+#
 import os
 import chromadb
+import torch
 from chromadb.utils import embedding_functions
 import re
 from xml.etree import ElementTree as ET
-from marker.models import load_all_models  # Import Marker
-from marker.converters import convert_single_pdf  # Import Marker conversion
+from marker.converters.pdf import PdfConverter
+from marker.models import create_model_dict
+from marker.output import text_from_rendered
 from dotenv import load_dotenv
 
 # Load environment variables from .env file (if needed for other keys)
 load_dotenv()
 
+# Load model dict
+converter = PdfConverter(
+    artifact_dict=create_model_dict(),
+)
+
 # Initialize embedding function
 embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
-
-# Load Marker models once (outside the function for efficiency)
-marker_models = load_all_models()
 
 # Character-based chunking (fallback)
 def chunk_by_size(content, chunk_size=1000):
@@ -93,9 +101,12 @@ def chunk_by_xml_elements(file, content, chunk_size):
 def chunk_pdf_files(file_path, chunk_size=1000):
     file_name = os.path.basename(file_path)
     print(f"Chunking: '{file_name}' with Marker")
-    
+    # Check if CUDA
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
     # Convert PDF to Markdown using Marker
-    markdown_text, _, _ = convert_single_pdf(file_path, marker_models)
+    rendered = converter(file_path)
+    markdown_text, _, _ = text_from_rendered(rendered)
     
     # Chunk the Markdown content by character size
     return chunk_by_size(markdown_text, chunk_size)
@@ -224,7 +235,7 @@ def index_codebase(
     return collection
 
 # Query the index
-def query_index(collection, query_text, n_results=1):
+def query_index(collection, query_text, n_results=3):
     results = collection.query(
         query_texts=[query_text],
         n_results=n_results
@@ -265,4 +276,5 @@ if __name__ == "__main__":
         batch_size=160
     )
     
-    query_index(collection, "In PI System Explorer how do you export a database to XML?")
+    #query_index(collection, "In PI System Explorer how do you export a database to XML?")
+    query_index(collection, "In PI System Explorer how do you save databases as libraries?")
