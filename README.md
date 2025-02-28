@@ -41,6 +41,7 @@ A Retrieval-Augmented Generation (RAG) indexing and querying system for processi
    ```bash
    git clone https://github.com/yourusername/rag-index.git
    cd rag-index
+   ```
 
 2. **Create a Virtual Environment**:
   ```bash
@@ -131,13 +132,13 @@ A Retrieval-Augmented Generation (RAG) indexing and querying system for processi
     File: example.xml
     Path: sample_docs/example1/subdir/example.xml
     Chunk Size: 10 lines
-    Content snippet: ```xml
+    Content snippet: 
     <element>...</element>
-    ```
+    
     OpenAI LLM Answer:
     In PI System Explorer, to reference a sibling element...
     ```
-    
+
     Customize `test_queries` in `query-openai.py` for different questions.
 
 ## Project Structure
